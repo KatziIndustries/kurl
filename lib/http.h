@@ -1,0 +1,1 @@
+int http_request(const char* host,const char* path);
