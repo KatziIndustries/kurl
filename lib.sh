@@ -1,1 +1,1 @@
-gcc -r -nostdlib -o kurl.o lib/*.c
+gcc -r -o kurl.o lib/*.c -lws2_32
