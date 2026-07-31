@@ -1,4 +1,7 @@
 *.exe
 *.o
+*.a
+*.so
+*.lib
 kurl
 kurl.exe
