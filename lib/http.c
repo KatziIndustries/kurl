@@ -1,4 +1,5 @@
 #include "tcp.h"
+#include <string.h>
 
 int http_request(const char* host,const char* path)
 {

@@ -1,9 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #ifdef _WIN32
     #include <winsock2.h>
 #elif __unix__
+    #include <netdb.h>
     #include <unistd.h>
     #include <arpa/inet.h>
     #include <sys/socket.h>
@@ -12,6 +14,7 @@
     typedef struct sockaddr_in SOCKADDR_IN;
     typedef struct sockaddr SOCKADDR;
     #define SOCKET_ERROR -1
+    #define closesocket close
 #else
     #error "Unknown platform"
 #endif
