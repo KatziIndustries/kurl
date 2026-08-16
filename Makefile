@@ -8,7 +8,7 @@ ifeq ($(OS),Windows_NT)
 	LDFLAGS = -lws2_32
 endif
 
-LIB_NAME = libkatzi.a
+LIB_NAME = libkurl.a
 
 LIB_SRC = $(wildcard lib/*.c)
 LIB_OBJ = $(LIB_SRC:.c=.o)
@@ -26,7 +26,7 @@ lib/%.o: lib/%.c
 
 
 test: $(LIB_NAME)
-	$(CC) $(CFLAGS) src/test.c -L. -lkatzi -o kurl $(LDFLAGS)
+	$(CC) $(CFLAGS) src/test.c -L. -lkurl -o kurl $(LDFLAGS)
 
 
 clean:
