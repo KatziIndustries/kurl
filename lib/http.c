@@ -41,6 +41,7 @@ int http_request(const char* host,const char* path)
         
         total_received += n;
         printf("%s", respone);
+        shutdown(sock,SHUT_RDWR);
     }
 
     printf("\n\nTotal received: %d bytes\n", total_received);
