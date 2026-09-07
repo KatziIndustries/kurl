@@ -26,7 +26,7 @@ lib/%.o: lib/%.c
 
 
 test: $(LIB_NAME)
-	$(CC) $(CFLAGS) src/test.c -L. -lkurl -o kurl $(LDFLAGS)
+	$(CC) $(CFLAGS) src/test.c -L. -lkurl -lssl -lcrypto -o kurl $(LDFLAGS)
 
 
 clean:
