@@ -1,63 +1,29 @@
 #include <stdio.h>
 #include <string.h>
-#include <unistd.h>
 
-#include <sys/socket.h>
-#include <netdb.h>
+#ifdef _WIN32
+    #include <winsock2.h>
+    #include <ws2tcpip.h>
+#else
+    #include <sys/socket.h>
+    #include <netinet/in.h>
+    #include <arpa/inet.h>
+    #include <unistd.h>
+    #include <netdb.h>
+#endif
 
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 
 #include "http.h"
+#include "tcp.h"
 
-static int tcp_connect(const char *host, const char *port)
-{
-    struct addrinfo hints;
-    struct addrinfo *result;
-    struct addrinfo *rp;
-
-    memset(&hints, 0, sizeof(hints));
-
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-
-    int ret = getaddrinfo(host, port, &hints, &result);
-
-    if (ret != 0) {
-        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(ret));
-        return -1;
-    }
-
-    int fd = -1;
-
-    for (rp = result; rp != NULL; rp = rp->ai_next) {
-
-        fd = socket(
-            rp->ai_family,
-            rp->ai_socktype,
-            rp->ai_protocol
-        );
-
-        if (fd == -1)
-            continue;
-
-        if (connect(fd, rp->ai_addr, rp->ai_addrlen) == 0)
-            break;
-
-        close(fd);
-        fd = -1;
-    }
-
-    freeaddrinfo(result);
-
-    return fd;
-}
 
 void https_request(const char *host, const char *path)
 {
-    int fd = tcp_connect(host, "443");
+    SOCKET fd = tcp_connect(host, 443);
 
-    if (fd == -1) {
+    if (fd == INVALID_SOCKET) {
         fprintf(stderr, "TCP connection failed\n");
         return;
     }
@@ -66,13 +32,10 @@ void https_request(const char *host, const char *path)
 
     if (ctx == NULL) {
         ERR_print_errors_fp(stderr);
-        close(fd);
+        tcp_cleanup(fd);
         return;
     }
 
-    /*
-     * Zertifikate überprüfen
-     */
     SSL_CTX_set_verify(
         ctx,
         SSL_VERIFY_PEER,
@@ -83,7 +46,7 @@ void https_request(const char *host, const char *path)
         ERR_print_errors_fp(stderr);
 
         SSL_CTX_free(ctx);
-        close(fd);
+        tcp_cleanup(fd);
 
         return;
     }
@@ -94,62 +57,47 @@ void https_request(const char *host, const char *path)
         ERR_print_errors_fp(stderr);
 
         SSL_CTX_free(ctx);
-        close(fd);
+        tcp_cleanup(fd);
 
         return;
     }
 
-    /*
-     * SNI
-     *
-     * Wichtig bei HTTPS-Servern mit mehreren Domains
-     * auf derselben IP.
-     */
     if (SSL_set_tlsext_host_name(ssl, host) != 1) {
         ERR_print_errors_fp(stderr);
 
         SSL_free(ssl);
         SSL_CTX_free(ctx);
-        close(fd);
+        tcp_cleanup(fd);
 
         return;
     }
 
-    /*
-     * Hostname für Zertifikatsprüfung setzen
-     */
     if (SSL_set1_host(ssl, host) != 1) {
         ERR_print_errors_fp(stderr);
 
         SSL_free(ssl);
         SSL_CTX_free(ctx);
-        close(fd);
+        tcp_cleanup(fd);
 
         return;
     }
 
-    /*
-     * TCP Socket an OpenSSL hängen
-     */
     if (SSL_set_fd(ssl, fd) != 1) {
         ERR_print_errors_fp(stderr);
 
         SSL_free(ssl);
         SSL_CTX_free(ctx);
-        close(fd);
+        tcp_cleanup(fd);
 
         return;
     }
 
-    /*
-     * TLS Handshake
-     */
     if (SSL_connect(ssl) != 1) {
         ERR_print_errors_fp(stderr);
 
         SSL_free(ssl);
         SSL_CTX_free(ctx);
-        close(fd);
+        tcp_cleanup(fd);
 
         return;
     }
@@ -159,9 +107,6 @@ void https_request(const char *host, const char *path)
         SSL_get_version(ssl)
     );
 
-    /*
-     * HTTP Request
-     */
     char request[4096];
 
     int request_len = snprintf(
@@ -175,34 +120,35 @@ void https_request(const char *host, const char *path)
         host
     );
 
-    if (request_len < 0 || (size_t)request_len >= sizeof(request)) {
+    if (request_len < 0 ||
+        (size_t)request_len >= sizeof(request)) {
+
         fprintf(stderr, "request too large\n");
 
         SSL_shutdown(ssl);
         SSL_free(ssl);
         SSL_CTX_free(ctx);
-        close(fd);
+        tcp_cleanup(fd);
 
         return;
     }
 
-    /*
-     * HTTP → TLS → TCP
-     */
-    if (SSL_write(ssl, request, request_len) <= 0) {
-        ERR_print_errors_fp(stderr);
+    int written = 0;
+    while (written < request_len) {
+        int n = SSL_write(ssl, request + written, request_len - written);
+        if (n <= 0) {
+            ERR_print_errors_fp(stderr);
 
-        SSL_shutdown(ssl);
-        SSL_free(ssl);
-        SSL_CTX_free(ctx);
-        close(fd);
+            SSL_shutdown(ssl);
+            SSL_free(ssl);
+            SSL_CTX_free(ctx);
+            tcp_cleanup(fd);
 
-        return;
+            return;
+        }
+        written += n;
     }
 
-    /*
-     * Response
-     */
     char buffer[8192];
 
     while (1) {
@@ -213,9 +159,6 @@ void https_request(const char *host, const char *path)
         );
 
         if (n > 0) {
-            /*
-             * Hier deinen vorhandenen HTTP Parser verwenden.
-             */
             fwrite(buffer, 1, n, stdout);
             continue;
         }
@@ -233,5 +176,5 @@ void https_request(const char *host, const char *path)
 
     SSL_free(ssl);
     SSL_CTX_free(ctx);
-    close(fd);
+    tcp_cleanup(fd);
 }

@@ -19,88 +19,64 @@ static int katzi_parse_url(const char *url, katzi_url_t *out)
     const char *query;
     size_t len;
 
+    if (url == NULL || out == NULL)
+        return -1;
+
     memset(out, 0, sizeof(*out));
 
-    /*
-     * protocol
-     */
     p = strstr(url, "://");
-
     if (p != NULL) {
         len = (size_t)(p - url);
-
-        if (len >= sizeof(out->protocol))
+        if (len == 0 || len >= sizeof(out->protocol))
             return -1;
 
         memcpy(out->protocol, url, len);
         out->protocol[len] = '\0';
-
         url = p + 3;
     } else {
         strcpy(out->protocol, "http");
     }
 
-    /*
-     * host
-     */
     path = strpbrk(url, "/?#");
-
     if (path == NULL) {
         if (strlen(url) >= sizeof(out->host))
             return -1;
 
         strcpy(out->host, url);
         strcpy(out->path, "/");
-        return 0;
+        return out->host[0] != '\0' ? 0 : -1;
     }
 
     len = (size_t)(path - url);
-
     if (len == 0 || len >= sizeof(out->host))
         return -1;
 
     memcpy(out->host, url, len);
     out->host[len] = '\0';
 
-    /*
-     * path
-     */
     if (*path == '/') {
         query = strpbrk(path, "?#");
-
         if (query == NULL) {
             if (strlen(path) >= sizeof(out->path))
                 return -1;
-
             strcpy(out->path, path);
         } else {
             len = (size_t)(query - path);
-
             if (len >= sizeof(out->path))
                 return -1;
-
             memcpy(out->path, path, len);
             out->path[len] = '\0';
         }
     } else {
         strcpy(out->path, "/");
-        query = path;
     }
 
-    /*
-     * query
-     */
     query = strchr(path, '?');
-
     if (query != NULL) {
+        const char *fragment;
         query++;
-
-        const char *hash = strchr(query, '#');
-
-        if (hash != NULL)
-            len = (size_t)(hash - query);
-        else
-            len = strlen(query);
+        fragment = strchr(query, '#');
+        len = fragment != NULL ? (size_t)(fragment - query) : strlen(query);
 
         if (len >= sizeof(out->query))
             return -1;
@@ -115,16 +91,16 @@ static int katzi_parse_url(const char *url, katzi_url_t *out)
 void katzi_url(const char *url)
 {
     katzi_url_t parsed;
+    char target[4096];
+    int target_len;
 
     if (katzi_parse_url(url, &parsed) != 0) {
-        fprintf(stderr, "invalid URL: %s\n", url);
+        fprintf(stderr, "invalid URL: %s\n", url != NULL ? url : "(null)");
         return;
     }
 
-    char target[4096];
-
     if (parsed.query[0] != '\0') {
-        snprintf(
+        target_len = snprintf(
             target,
             sizeof(target),
             "%s?%s",
@@ -132,12 +108,17 @@ void katzi_url(const char *url)
             parsed.query
         );
     } else {
-        snprintf(
+        target_len = snprintf(
             target,
             sizeof(target),
             "%s",
             parsed.path
         );
+    }
+
+    if (target_len < 0 || (size_t)target_len >= sizeof(target)) {
+        fprintf(stderr, "URL target too large\n");
+        return;
     }
 
     if (strcmp(parsed.protocol, "http") == 0) {
@@ -150,9 +131,5 @@ void katzi_url(const char *url)
         return;
     }
 
-    fprintf(
-        stderr,
-        "unsupported protocol: %s\n",
-        parsed.protocol
-    );
+    fprintf(stderr, "unsupported protocol: %s\n", parsed.protocol);
 }
