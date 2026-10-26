@@ -3,13 +3,13 @@
 
 #include "tcp.h"
 
-int http_request(const char* host, const char* path)
+size_t http_request(const char* host, const char* path, char *buffer, size_t buflen)
 {
     int port = 80;
     SOCKET sock = tcp_connect(host, port);
 
     if (sock == INVALID_SOCKET)
-        return 1;
+        return 0;
 
     char request[512];
     int request_len = snprintf(
@@ -27,26 +27,29 @@ int http_request(const char* host, const char* path)
     if (request_len < 0 || (size_t)request_len >= sizeof(request)) {
         fprintf(stderr, "HTTP request too large\n");
         tcp_cleanup(sock);
-        return 1;
+        return 0;
     }
 
     if (tcp_send(sock, request, (size_t)request_len) < 0) {
         tcp_cleanup(sock);
-        return 1;
+        return 0;
     }
 
-    char response[1024];
     size_t total_received = 0;
-    while (1) {
-        int n = tcp_receive(sock, response, sizeof(response));
+
+    while (total_received < buflen - 1) {
+        int n = tcp_receive(
+            sock,
+            buffer + total_received,
+            buflen - 1 - total_received
+        );
+
         if (n <= 0)
             break;
 
         total_received += (size_t)n;
-        fwrite(response, 1, (size_t)n, stdout);
     }
 
-    printf("\n\nTotal received: %zu bytes\n", total_received);
     tcp_cleanup(sock);
-    return 0;
+    return total_received;
 }

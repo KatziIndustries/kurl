@@ -19,13 +19,13 @@
 #include "tcp.h"
 
 
-void https_request(const char *host, const char *path)
+size_t https_request(const char *host, const char *path, char *buffer, size_t buflen)
 {
     SOCKET fd = tcp_connect(host, 443);
 
     if (fd == INVALID_SOCKET) {
         fprintf(stderr, "TCP connection failed\n");
-        return;
+        return 0;
     }
 
     SSL_CTX *ctx = SSL_CTX_new(TLS_client_method());
@@ -33,7 +33,7 @@ void https_request(const char *host, const char *path)
     if (ctx == NULL) {
         ERR_print_errors_fp(stderr);
         tcp_cleanup(fd);
-        return;
+        return 0;
     }
 
     SSL_CTX_set_verify(
@@ -48,7 +48,7 @@ void https_request(const char *host, const char *path)
         SSL_CTX_free(ctx);
         tcp_cleanup(fd);
 
-        return;
+        return 0;
     }
 
     SSL *ssl = SSL_new(ctx);
@@ -59,7 +59,7 @@ void https_request(const char *host, const char *path)
         SSL_CTX_free(ctx);
         tcp_cleanup(fd);
 
-        return;
+        return 0;
     }
 
     if (SSL_set_tlsext_host_name(ssl, host) != 1) {
@@ -69,7 +69,7 @@ void https_request(const char *host, const char *path)
         SSL_CTX_free(ctx);
         tcp_cleanup(fd);
 
-        return;
+        return 0;
     }
 
     if (SSL_set1_host(ssl, host) != 1) {
@@ -79,7 +79,7 @@ void https_request(const char *host, const char *path)
         SSL_CTX_free(ctx);
         tcp_cleanup(fd);
 
-        return;
+        return 0;
     }
 
     if (SSL_set_fd(ssl, fd) != 1) {
@@ -89,7 +89,7 @@ void https_request(const char *host, const char *path)
         SSL_CTX_free(ctx);
         tcp_cleanup(fd);
 
-        return;
+        return 0;
     }
 
     if (SSL_connect(ssl) != 1) {
@@ -99,13 +99,8 @@ void https_request(const char *host, const char *path)
         SSL_CTX_free(ctx);
         tcp_cleanup(fd);
 
-        return;
+        return 0;
     }
-
-    printf(
-        "TLS connected: %s\n",
-        SSL_get_version(ssl)
-    );
 
     char request[4096];
 
@@ -130,7 +125,7 @@ void https_request(const char *host, const char *path)
         SSL_CTX_free(ctx);
         tcp_cleanup(fd);
 
-        return;
+        return 0;
     }
 
     int written = 0;
@@ -144,22 +139,22 @@ void https_request(const char *host, const char *path)
             SSL_CTX_free(ctx);
             tcp_cleanup(fd);
 
-            return;
+            return 0;
         }
         written += n;
     }
 
-    char buffer[8192];
+    size_t total_received = 0;
 
     while (1) {
         int n = SSL_read(
             ssl,
-            buffer,
-            sizeof(buffer)
+            buffer + total_received,
+            (int)(buflen - 1 - total_received)
         );
 
         if (n > 0) {
-            fwrite(buffer, 1, n, stdout);
+            total_received += (size_t)n;
             continue;
         }
 
@@ -168,13 +163,18 @@ void https_request(const char *host, const char *path)
         if (error == SSL_ERROR_ZERO_RETURN)
             break;
 
+        if (error == SSL_ERROR_WANT_READ ||
+            error == SSL_ERROR_WANT_WRITE)
+            continue;
+
         ERR_print_errors_fp(stderr);
         break;
     }
 
     SSL_shutdown(ssl);
-
     SSL_free(ssl);
     SSL_CTX_free(ctx);
     tcp_cleanup(fd);
+
+    return total_received;
 }

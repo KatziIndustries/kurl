@@ -88,7 +88,7 @@ static int katzi_parse_url(const char *url, katzi_url_t *out)
     return 0;
 }
 
-void katzi_url(const char *url)
+size_t katzi_url(const char *url,char *buffer, size_t buflen)
 {
     katzi_url_t parsed;
     char target[4096];
@@ -96,7 +96,7 @@ void katzi_url(const char *url)
 
     if (katzi_parse_url(url, &parsed) != 0) {
         fprintf(stderr, "invalid URL: %s\n", url != NULL ? url : "(null)");
-        return;
+        return 0;
     }
 
     if (parsed.query[0] != '\0') {
@@ -118,18 +118,17 @@ void katzi_url(const char *url)
 
     if (target_len < 0 || (size_t)target_len >= sizeof(target)) {
         fprintf(stderr, "URL target too large\n");
-        return;
+        return 0;
     }
 
     if (strcmp(parsed.protocol, "http") == 0) {
-        http_request(parsed.host, target);
-        return;
+        return http_request(parsed.host, target, buffer, buflen);
     }
 
     if (strcmp(parsed.protocol, "https") == 0) {
-        https_request(parsed.host, target);
-        return;
+        return https_request(parsed.host, target, buffer, buflen);
     }
 
     fprintf(stderr, "unsupported protocol: %s\n", parsed.protocol);
+    return 0;
 }
