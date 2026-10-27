@@ -132,3 +132,16 @@ size_t katzi_url(const char *url,char *buffer, size_t buflen)
     fprintf(stderr, "unsupported protocol: %s\n", parsed.protocol);
     return 0;
 }
+
+unsigned char *katzi_get(const char *url, size_t *size)
+{
+    size_t buflen = 4096;
+    char *buffer = malloc(buflen);
+
+    size_t result = katzi_url(url, buffer, buflen);
+
+    if (size != NULL)
+        *size = result;
+
+    return (unsigned char *)buffer;
+}
